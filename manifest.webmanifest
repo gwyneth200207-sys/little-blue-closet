@@ -1,0 +1,19 @@
+{
+  "name": "小蓝衣橱",
+  "short_name": "小蓝衣橱",
+  "description": "本机整理衣橱、制作穿搭拼图的蓝白马卡龙小应用。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f8ff",
+  "theme_color": "#f5f8ff",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
