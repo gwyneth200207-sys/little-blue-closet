@@ -50,6 +50,9 @@
   let selectedPieceIds = [];
   let extraPieces = [];
   let selectedBackground = 'blue';
+  let pieceLayouts = {};
+  let activePieceId = '';
+  const pieceGestures = new Map();
   let toastTimer;
 
   function saveState() {
@@ -136,13 +139,121 @@
     ];
   }
 
+  function getPieceLayout(piece, index) {
+    if (!pieceLayouts[piece.id]) {
+      const defaults = [
+        { x: 26, y: 31, rotation: -8 },
+        { x: 74, y: 31, rotation: 7 },
+        { x: 72, y: 70, rotation: -6 },
+        { x: 28, y: 70, rotation: 5 },
+        { x: 50, y: 51, rotation: 2 }
+      ];
+      const position = defaults[index] || {
+        x: 18 + ((index * 29) % 64),
+        y: 21 + ((index * 37) % 61),
+        rotation: (index % 2 ? 1 : -1) * (4 + index % 7)
+      };
+      pieceLayouts[piece.id] = { ...position, scale: 1 };
+    }
+    return pieceLayouts[piece.id];
+  }
+
+  function applyPieceLayout(element, layout) {
+    element.style.left = `${layout.x}%`;
+    element.style.top = `${layout.y}%`;
+    element.style.transform = `translate(-50%, -50%) rotate(${layout.rotation}deg) scale(${layout.scale})`;
+  }
+
+  function attachPieceGestures(element, piece) {
+    element.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      element.setPointerCapture(event.pointerId);
+      element.classList.add('is-active');
+      element.style.zIndex = '10';
+      activePieceId = piece.id;
+      updateActivePieceControls();
+      const gesture = pieceGestures.get(piece.id) || { pointers: new Map() };
+      gesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (gesture.pointers.size === 1) {
+        gesture.mode = 'drag';
+        gesture.startPointer = { x: event.clientX, y: event.clientY };
+        gesture.startLayout = { ...getPieceLayout(piece, getSelectedPieces().indexOf(piece)) };
+      } else if (gesture.pointers.size === 2) {
+        const [first, second] = [...gesture.pointers.values()];
+        gesture.mode = 'pinch';
+        gesture.startDistance = Math.hypot(first.x - second.x, first.y - second.y);
+        gesture.startScale = getPieceLayout(piece, getSelectedPieces().indexOf(piece)).scale;
+      }
+      pieceGestures.set(piece.id, gesture);
+    });
+
+    element.addEventListener('pointermove', (event) => {
+      const gesture = pieceGestures.get(piece.id);
+      if (!gesture?.pointers.has(event.pointerId)) return;
+      gesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const layout = getPieceLayout(piece, getSelectedPieces().indexOf(piece));
+      const bounds = byId('collage-pieces').getBoundingClientRect();
+      if (gesture.mode === 'pinch' && gesture.pointers.size >= 2 && gesture.startDistance > 0) {
+        const [first, second] = [...gesture.pointers.values()];
+        const distance = Math.hypot(first.x - second.x, first.y - second.y);
+        layout.scale = Math.min(2.4, Math.max(0.45, gesture.startScale * distance / gesture.startDistance));
+      } else if (gesture.mode === 'drag' && bounds.width && bounds.height) {
+        layout.x = Math.min(110, Math.max(-10, gesture.startLayout.x + (event.clientX - gesture.startPointer.x) / bounds.width * 100));
+        layout.y = Math.min(110, Math.max(-10, gesture.startLayout.y + (event.clientY - gesture.startPointer.y) / bounds.height * 100));
+      }
+      applyPieceLayout(element, layout);
+    });
+
+    const finishGesture = (event) => {
+      const gesture = pieceGestures.get(piece.id);
+      if (!gesture?.pointers.has(event.pointerId)) return;
+      gesture.pointers.delete(event.pointerId);
+      if (gesture.pointers.size === 1) {
+        const [pointer] = gesture.pointers.values();
+        gesture.mode = 'drag';
+        gesture.startPointer = { ...pointer };
+        gesture.startLayout = { ...getPieceLayout(piece, getSelectedPieces().indexOf(piece)) };
+      } else if (!gesture.pointers.size) {
+        pieceGestures.delete(piece.id);
+        element.classList.remove('is-active');
+        element.style.zIndex = '';
+      } else {
+        gesture.mode = 'pinch';
+        const [first, second] = [...gesture.pointers.values()];
+        gesture.startDistance = Math.hypot(first.x - second.x, first.y - second.y);
+        gesture.startScale = getPieceLayout(piece, getSelectedPieces().indexOf(piece)).scale;
+      }
+    };
+    element.addEventListener('pointerup', finishGesture);
+    element.addEventListener('pointercancel', finishGesture);
+  }
+
+  function updateActivePieceControls() {
+    const piece = getSelectedPieces().find((entry) => entry.id === activePieceId);
+    const controls = byId('collage-piece-controls');
+    controls.hidden = !piece;
+    byId('collage-selected-name').textContent = piece ? `调整：${piece.name}` : '';
+    $$('.collage-piece', byId('collage-pieces')).forEach((element) => {
+      element.classList.toggle('is-selected', element.dataset.collagePiece === activePieceId);
+    });
+  }
+
   function updateCollage() {
     const pieces = getSelectedPieces();
     byId('selected-count').textContent = `已选 ${pieces.length} 件`;
     byId('collage-placeholder').hidden = pieces.length > 0;
+    if (!pieces.some((piece) => piece.id === activePieceId)) activePieceId = pieces.at(-1)?.id || '';
     byId('collage-pieces').innerHTML = pieces.map((piece) => `
-      <div class="collage-piece">${imageMarkup(piece)}</div>
+      <div class="collage-piece" data-collage-piece="${escapeHtml(piece.id)}" aria-label="${escapeHtml(piece.name)}">
+        ${imageMarkup(piece)}
+      </div>
     `).join('');
+    pieces.forEach((piece, index) => {
+      const element = $(`[data-collage-piece="${CSS.escape(piece.id)}"]`, byId('collage-pieces'));
+      applyPieceLayout(element, getPieceLayout(piece, index));
+      attachPieceGestures(element, piece);
+    });
+    updateActivePieceControls();
     byId('collage-canvas').dataset.bg = selectedBackground;
   }
 
@@ -462,20 +573,13 @@
       context.fillStyle = '#556b91';
       context.font = '600 19px sans-serif';
       context.fillText('TODAY, I LIKE THIS.', 32, 39);
-      const positions = [
-        [25, 80, 310, 340, -0.13],
-        [376, 80, 310, 340, 0.11],
-        [320, 340, 300, 330, -0.09],
-        [80, 365, 295, 300, 0.08],
-        [205, 190, 310, 335, 0.02]
-      ];
-      const drawImage = (source, x, y, w, h, angle) => new Promise((resolveDraw) => {
+      const drawImage = (source, x, y, w, h, angle, scale) => new Promise((resolveDraw) => {
         const image = new Image();
         image.onload = () => {
           context.save();
           context.translate(x + w / 2, y + h / 2);
           context.rotate(angle);
-          const ratio = Math.min(w / image.width, h / image.height);
+          const ratio = Math.min(w / image.width, h / image.height) * scale;
           const drawWidth = image.width * ratio;
           const drawHeight = image.height * ratio;
           context.shadowColor = '#56617d30';
@@ -487,13 +591,14 @@
         image.onerror = () => resolveDraw();
         image.src = source;
       });
-      for (let index = 0; index < Math.min(pieces.length, 5); index += 1) {
+      for (let index = 0; index < pieces.length; index += 1) {
         const piece = pieces[index];
-        const placement = positions[index];
+        const layout = getPieceLayout(piece, index);
+        const placement = [layout.x / 100 * 720 - 151, layout.y / 100 * 720 - 144, 302, 288, layout.rotation * Math.PI / 180, layout.scale];
         if (piece.image) {
           await drawImage(piece.image, ...placement);
         } else {
-          context.font = '110px "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+          context.font = `${110 * layout.scale}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
           context.textAlign = 'center';
           context.fillText(piece.emoji || '✿', placement[0] + placement[2] / 2, placement[1] + placement[3] / 2);
         }
@@ -541,6 +646,7 @@
         background: selectedBackground,
         image: await captureCollage(pieces, selectedBackground),
         pieces: pieces.map((piece) => piece.id),
+        layout: pieces.map((piece, index) => ({ id: piece.id, ...getPieceLayout(piece, index) })),
         createdAt: Date.now()
       };
       state.outfits.push(outfit);
@@ -586,6 +692,39 @@
     const pick = event.target.closest('[data-pick-item]');
     if (pick) {
       togglePiece(pick.dataset.pickItem);
+      return;
+    }
+    const zoom = event.target.closest('[data-active-piece-zoom]');
+    if (zoom) {
+      const pieces = getSelectedPieces();
+      const piece = pieces.find((entry) => entry.id === activePieceId);
+      if (!piece) return;
+      const layout = getPieceLayout(piece, pieces.indexOf(piece));
+      layout.scale = Math.min(2.4, Math.max(0.45, layout.scale + Number(zoom.dataset.activePieceZoom) * 0.15));
+      const element = $(`[data-collage-piece="${CSS.escape(piece.id)}"]`, byId('collage-pieces'));
+      applyPieceLayout(element, layout);
+      return;
+    }
+    const rotate = event.target.closest('[data-active-piece-rotate]');
+    if (rotate) {
+      const pieces = getSelectedPieces();
+      const piece = pieces.find((entry) => entry.id === activePieceId);
+      if (!piece) return;
+      const layout = getPieceLayout(piece, pieces.indexOf(piece));
+      layout.rotation += Number(rotate.dataset.activePieceRotate) * 15;
+      const element = $(`[data-collage-piece="${CSS.escape(piece.id)}"]`, byId('collage-pieces'));
+      applyPieceLayout(element, layout);
+      return;
+    }
+    const removePiece = event.target.closest('[data-active-piece-remove]');
+    if (removePiece) {
+      const id = activePieceId;
+      if (!id) return;
+      selectedPieceIds = selectedPieceIds.filter((pieceId) => pieceId !== id);
+      extraPieces = extraPieces.filter((piece) => piece.id !== id);
+      delete pieceLayouts[id];
+      activePieceId = '';
+      renderPicker();
       return;
     }
     const swatch = event.target.closest('.swatch');

@@ -26,20 +26,9 @@
 
       <main id="app-main">
         <section class="view active" id="wardrobe-view" aria-label="我的衣橱">
-          <div class="welcome-row">
-            <div>
-              <span class="eyebrow"><span class="sparkle">✳</span> MONDAY, YOUR WAY</span>
-              <h1>今天穿点<span class="text-blue">喜欢的</span></h1>
-              <p class="muted">每一件喜欢的衣服，都值得被好好记录。</p>
-            </div>
-            <div class="weather-pill"><span>☀️</span><span>晴日穿搭</span></div>
-          </div>
-
           <div class="hero-card">
             <div class="hero-copy">
               <span class="hero-label">YOUR CLOSET, YOUR STORY</span>
-              <h2>衣橱轻一点，<br>灵感多一点。</h2>
-              <p>从整理每一件衣服开始，<br>发现属于自己的穿搭灵感。</p>
               <button class="button button-light" data-action="import">＋ 添加第一件衣服</button>
             </div>
             <div class="hero-art" aria-hidden="true">
@@ -70,12 +59,6 @@
         </section>
 
         <section class="view" id="outfits-view" aria-label="我的搭配">
-          <div class="page-intro">
-            <span class="eyebrow"><span class="sparkle">✳</span> STYLE STUDIO</span>
-            <h1>今天的你，<span class="text-blue">想怎么搭？</span></h1>
-            <p class="muted">从衣橱挑选单品，拼出今天的心情。</p>
-          </div>
-
           <div class="studio-layout">
             <div class="studio-sidebar">
               <div class="section-heading compact-heading">
@@ -106,6 +89,15 @@
                   <span class="canvas-caption" id="canvas-caption">little things, lovely days</span>
                 </div>
               </div>
+              <p class="collage-tip">点击图片选中并拖动 · 双指捏合缩放，下方按钮旋转或微调大小</p>
+              <div class="collage-controls" id="collage-piece-controls" hidden>
+                <span class="collage-selected-name" id="collage-selected-name"></span>
+                <button type="button" data-active-piece-rotate="-1" aria-label="向左旋转选中图片">↶</button>
+                <button type="button" data-active-piece-rotate="1" aria-label="向右旋转选中图片">↷</button>
+                <button type="button" data-active-piece-zoom="-1" aria-label="缩小选中图片">−</button>
+                <button type="button" data-active-piece-zoom="1" aria-label="放大选中图片">＋</button>
+                <button type="button" class="remove-collage-piece" data-active-piece-remove>移除</button>
+              </div>
               <div class="background-picker">
                 <span>拼图底色</span>
                 <button class="swatch selected" data-bg="blue" aria-label="雾霾蓝背景"></button>
@@ -132,11 +124,6 @@
             <span class="eyebrow"><span class="sparkle">✳</span> A LITTLE ABOUT ME</span>
             <h1>我的<span class="text-blue">衣橱日记</span></h1>
             <p class="muted">越穿越喜欢，越整理越了解自己。</p>
-          </div>
-          <div class="profile-banner">
-            <div class="profile-avatar">衣</div>
-            <div><span class="eyebrow">YOUR CLOSET JOURNAL</span><h2>我的穿搭小宇宙</h2><p>每一次选择，都是一点点喜欢自己。</p></div>
-            <span class="profile-flower" aria-hidden="true">✿</span>
           </div>
           <div class="stats-grid">
             <article class="stat-card stat-blue"><span class="stat-icon">▧</span><span class="stat-label">衣橱总件数</span><strong id="stat-items">0</strong><small>件心爱单品</small></article>
