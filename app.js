@@ -325,16 +325,16 @@
       <button type="button" class="modal-close" aria-label="关闭">×</button>
       <span class="eyebrow">${isEditing ? 'EDIT YOUR FAVORITE' : 'A NEW FAVORITE'}</span>
       <h2>${isEditing ? '编辑衣物' : '添加一件心爱单品'}</h2>
-      <p class="modal-subtitle">照片只在本机处理；填写信息后保存到你的衣橱。</p>
+      <p class="modal-subtitle">照片保留原始背景并保存在本机；填写信息后保存到你的衣橱。</p>
       <div class="upload-zone" aria-live="polite">
         <span class="upload-preview">${pendingPhoto ? `<img src="${pendingPhoto}" alt="衣物预览">` : '<span class="empty-state-icon">📷</span>'}</span>
         <strong>${pendingPhoto ? '衣物照片预览' : '添加衣物照片'}</strong>
-        <span>照片只在本机处理；会自动尝试去除背景</span>
+        <span>保留照片原始背景，不会自动抠图</span>
       </div>
       <input id="item-gallery-input" type="file" accept="image/*" hidden>
       <input id="item-camera-input" type="file" accept="image/*" capture="environment" hidden>
       <div class="photo-actions"><button class="button button-outline" id="take-item-photo" type="button">拍照</button><button class="button button-outline" id="choose-item-photo" type="button">从相册选择</button></div>
-      <div class="processing-hint" id="processing-hint" hidden><span class="spinner"></span>正在本机处理图片背景…</div>
+      <div class="processing-hint" id="processing-hint" hidden><span class="spinner"></span>正在载入照片…</div>
       <form id="item-form">
         <div class="form-grid">
           <div class="form-field full"><label for="item-name">名称 *</label><input id="item-name" name="name" required maxlength="45" placeholder="例如：雾霾蓝针织衫" value="${escapeHtml(item?.name || '')}"></div>
@@ -364,12 +364,11 @@
       }
       $('#processing-hint', card).hidden = false;
       try {
-        const result = await removeBackground(file);
-        pendingPhoto = result.image;
-        pendingPhotoCutout = result.cutout;
+        pendingPhoto = await fileToDataUrl(file);
+        pendingPhotoCutout = false;
         $('.upload-preview', card).innerHTML = `<img src="${pendingPhoto}" alt="衣物预览">`;
         $('.upload-zone strong', card).textContent = '照片已载入 · 点击更换';
-        showToast(result.cutout ? '已在本机尝试去除背景，可在预览中检查' : '已添加照片，保留原图背景');
+        showToast('照片已载入，保留原始背景');
       } catch (error) {
         console.error('读取衣物图片失败。', error);
         showToast('无法读取这张图片，请换一张试试');
@@ -437,95 +436,6 @@
     });
   }
 
-  async function removeBackground(file) {
-    const bitmap = await createImageBitmap(file);
-    const maxSide = 620;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) {
-      bitmap.close();
-      throw new Error('此设备无法处理图片');
-    }
-    context.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
-    const pixels = context.getImageData(0, 0, width, height);
-    const data = pixels.data;
-    const dominant = findBorderColor(data, width, height);
-    if (!dominant) return { image: await fileToDataUrl(file), cutout: false };
-
-    const length = width * height;
-    const visited = new Uint8Array(length);
-    const queue = new Int32Array(length);
-    let head = 0;
-    let tail = 0;
-    const threshold = 82;
-    const enqueue = (position) => {
-      if (position < 0 || position >= length || visited[position]) return;
-      const offset = position * 4;
-      const distance = Math.sqrt((data[offset] - dominant[0]) ** 2 + (data[offset + 1] - dominant[1]) ** 2 + (data[offset + 2] - dominant[2]) ** 2);
-      if (distance > threshold) return;
-      visited[position] = 1;
-      queue[tail++] = position;
-    };
-    for (let x = 0; x < width; x += 1) {
-      enqueue(x);
-      enqueue((height - 1) * width + x);
-    }
-    for (let y = 1; y < height - 1; y += 1) {
-      enqueue(y * width);
-      enqueue(y * width + width - 1);
-    }
-    while (head < tail) {
-      const position = queue[head++];
-      const x = position % width;
-      if (x > 0) enqueue(position - 1);
-      if (x + 1 < width) enqueue(position + 1);
-      if (position >= width) enqueue(position - width);
-      if (position + width < length) enqueue(position + width);
-    }
-    if (tail < length * 0.04) return { image: await fileToDataUrl(file), cutout: false };
-    for (let position = 0; position < length; position += 1) {
-      if (!visited[position]) continue;
-      const offset = position * 4;
-      const distance = Math.sqrt((data[offset] - dominant[0]) ** 2 + (data[offset + 1] - dominant[1]) ** 2 + (data[offset + 2] - dominant[2]) ** 2);
-      data[offset + 3] = distance > threshold - 12 ? Math.round((threshold - distance) / 12 * 255) : 0;
-    }
-    context.putImageData(pixels, 0, 0);
-    return { image: canvas.toDataURL('image/webp', 0.84), cutout: true };
-  }
-
-  function findBorderColor(data, width, height) {
-    const buckets = new Map();
-    const step = Math.max(1, Math.floor(Math.max(width, height) / 100));
-    const sample = (x, y) => {
-      const offset = (y * width + x) * 4;
-      if (data[offset + 3] < 128) return;
-      const key = `${data[offset] >> 4},${data[offset + 1] >> 4},${data[offset + 2] >> 4}`;
-      const entry = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
-      entry.count += 1;
-      entry.red += data[offset];
-      entry.green += data[offset + 1];
-      entry.blue += data[offset + 2];
-      buckets.set(key, entry);
-    };
-    for (let x = 0; x < width; x += step) {
-      sample(x, 0);
-      sample(x, height - 1);
-    }
-    for (let y = step; y < height - 1; y += step) {
-      sample(0, y);
-      sample(width - 1, y);
-    }
-    const dominant = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
-    if (!dominant) return null;
-    return [dominant.red / dominant.count, dominant.green / dominant.count, dominant.blue / dominant.count];
-  }
-
   function startImport() {
     openItemModal();
   }
@@ -539,13 +449,12 @@
     for (const file of files) {
       if (!file.type.startsWith('image/')) continue;
       try {
-        const result = await removeBackground(file);
         extraPieces.push({
           id: makeId(),
           name: file.name.replace(/\.[^.]+$/, '') || '我的照片',
           category: '搭配图片',
-          image: result.image,
-          cutout: result.cutout,
+          image: await fileToDataUrl(file),
+          cutout: false,
           emoji: '✿'
         });
       } catch (error) {

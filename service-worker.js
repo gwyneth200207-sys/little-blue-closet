@@ -1,4 +1,4 @@
-const CACHE_NAME = 'little-blue-closet-shell-v4';
+const CACHE_NAME = 'little-blue-closet-shell-v6';
 const APP_ASSETS = [
   './',
   './index.html',
